@@ -150,19 +150,17 @@ class SemiSupervisedParsingLoss(nn.Module):
     def loss_hook(self, sentences, neg_samples, inputs):
         pass
 
-    def get_score_for_spans(self, scalars, spans):
+    def get_score_for_spans(self, sentences, scalars, spans):
         """
         Returns a list where each element is the score of the given tree.
         """
-        sentences = batch_map['sentences']
         batch_size = sentences.shape[0]
         length = sentences.shape[1]
-        device = self.net.device
-        dtype = torch.float32
+        device = torch.cuda.current_device() if self._cuda else None
         span_sets = [set(span_lst) for span_lst in spans]
 
         # Chart.
-        chart = [torch.full((length-i, batch_size), 1, dtype=dtype, device=device) for i in range(length)]
+        chart = [torch.full((length-i, batch_size), 1, dtype=torch.float, device=device) for i in range(length)]
 
         # Backpointers.
         bp = {}
@@ -227,22 +225,23 @@ class SemiSupervisedParsingLoss(nn.Module):
                 lps, rps, sps = torch.cat(lps, 1), torch.cat(rps, 1), torch.cat(sps, 1)
 
                 ps = lps + rps + sps
-                argmax = ps.argmax(1).long()
-                valmax = ps[range(batch_size), argmax]
 
-                # Choose the relevant span.
-                # TODO
+                # Use the relevant spans.
+                # argmax = ps.argmax(1).long()
+                argmax = torch.tensor(to_choose, dtype=torch.long, device=device)
+
+                valmax = ps[range(batch_size), argmax]
 
                 chart[level][pos, :] = valmax
 
-        return None
+        return chart[-1][0]
 
     def forward(self, sentences, neg_samples, diora, info):
         batch_size, length = sentences.shape
         size = diora.outside_h.shape[-1]
 
         # Get the score for the ground truth tree.
-        gold_scores = self.get_score_for_spans(diora.saved_scalars, info['spans'])
+        gold_scores = self.get_score_for_spans(sentences, diora.saved_scalars, info['spans'])
 
         # Get the score for maximal tree.
         # TODO
