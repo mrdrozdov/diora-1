@@ -154,6 +154,12 @@ class SemiSupervisedParsingLoss(nn.Module):
         batch_size, length = sentences.shape
         size = diora.outside_h.shape[-1]
 
+        # Get the score for the ground truth tree.
+        # TODO
+
+        # Get the score for maximal tree.
+        # TODO
+
         loss = diora.outside_h.norm()
 
         ret = dict(semi_supervised_parsing_loss=loss)

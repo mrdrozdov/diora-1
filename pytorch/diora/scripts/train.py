@@ -47,37 +47,6 @@ def generate_seeds(n, seed=11):
     return seeds
 
 
-def override_init_with_batch(var):
-    init_with_batch = var.init_with_batch
-
-    def func(self, *args, **kwargs):
-        init_with_batch(*args, **kwargs)
-        self.saved_scalars = {i: {} for i in range(self.length)}
-        self.saved_scalars_out = {i: {} for i in range(self.length)}
-
-    var.init_with_batch = types.MethodType(func, var)
-
-
-def override_inside_hook(var):
-    def func(self, level, h, c, s):
-        length = self.length
-        B = self.batch_size
-        L = length - level
-
-        assert s.shape[0] == B
-        assert s.shape[1] == L
-        # assert s.shape[2] == N
-        assert s.shape[3] == 1
-        assert len(s.shape) == 4
-        smax = s.max(2, keepdim=True)[0]
-        s = s - smax
-
-        for pos in range(L):
-            self.saved_scalars[level][pos] = s[:, pos, :]
-
-    var.inside_hook = types.MethodType(func, var)
-
-
 def replace_leaves(tree, leaves):
     def func(tr, pos=0):
         if not isinstance(tr, (list, tuple)):
@@ -113,10 +82,6 @@ def run_parse(options, train_iterator, trainer, validation_iterator):
     # Parse
 
     diora = trainer.net.diora
-
-    ## Monkey patch parsing specific methods.
-    override_init_with_batch(diora)
-    override_inside_hook(diora)
 
     ## Turn off outside pass.
     trainer.net.diora.outside = False

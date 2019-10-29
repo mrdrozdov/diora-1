@@ -455,6 +455,22 @@ class DioraBase(nn.Module):
             h, c, s = inside_func(compose_func, score_func, batch_info, chart, index,
                 normalize_func=normalize_func)
 
+            # Save the scalars.
+            length = self.length
+            B = self.batch_size
+            L = length - level
+
+            assert s.shape[0] == B
+            assert s.shape[1] == L
+            # assert s.shape[2] == N
+            assert s.shape[3] == 1
+            assert len(s.shape) == 4
+            smax = s.max(2, keepdim=True)[0]
+            s = s - smax
+
+            for pos in range(L):
+                self.saved_scalars[level][pos] = s[:, pos, :]
+
             self.inside_hook(level, h, c, s)
 
     def inside_hook(self, level, h, c, s):
@@ -516,6 +532,8 @@ class DioraBase(nn.Module):
         self.chart = Chart(batch_size, length, size, dtype=torch.float32, cuda=self.is_cuda)
         self.chart.inside_h[:, :self.length] = h
         self.chart.inside_c[:, :self.length] = c
+
+        self.saved_scalars = {i: {} for i in range(self.length)}
 
     def reset(self):
         self.batch_size = None
