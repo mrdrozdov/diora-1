@@ -150,12 +150,99 @@ class SemiSupervisedParsingLoss(nn.Module):
     def loss_hook(self, sentences, neg_samples, inputs):
         pass
 
+    def get_score_for_spans(self, scalars, spans):
+        """
+        Returns a list where each element is the score of the given tree.
+        """
+        sentences = batch_map['sentences']
+        batch_size = sentences.shape[0]
+        length = sentences.shape[1]
+        device = self.net.device
+        dtype = torch.float32
+        span_sets = [set(span_lst) for span_lst in spans]
+
+        # Chart.
+        chart = [torch.full((length-i, batch_size), 1, dtype=dtype, device=device) for i in range(length)]
+
+        # Backpointers.
+        bp = {}
+        for ib in range(batch_size):
+            bp[ib] = [[None] * (length - i) for i in range(length)]
+            bp[ib][0] = [i for i in range(length)]
+
+        for level in range(1, length):
+            L = length - level
+            N = level
+
+            for pos in range(L):
+
+                pairs, lps, rps, sps = [], [], [], []
+
+                # Book-keeping for given span.
+                to_choose = [0] * batch_size
+                to_choose_assert = [False] * batch_size
+
+                # Assumes that the bottom-left most leaf is in the first constituent.
+                spbatch = scalars[level][pos]
+
+                for idx in range(N):
+                    # (level, pos)
+                    l_level = idx
+                    l_pos = pos
+                    r_level = level-idx-1
+                    r_pos = pos+idx+1
+
+                    assert l_level >= 0
+                    assert l_pos >= 0
+                    assert r_level >= 0
+                    assert r_pos >= 0
+
+                    l = (l_level, l_pos)
+                    r = (r_level, r_pos)
+
+                    lp = chart[l_level][l_pos].view(-1, 1)
+                    rp = chart[r_level][r_pos].view(-1, 1)
+                    sp = spbatch[:, idx].view(-1, 1)
+
+                    lps.append(lp)
+                    rps.append(rp)
+                    sps.append(sp)
+
+                    pairs.append((l, r))
+
+                    # Identifty the correct span.
+                    l_size = l_level + 1
+                    r_size = r_level + 1
+                    l_span = (l_pos, l_size)
+                    r_span = (r_pos, r_size)
+                    for batch_idx in range(batch_size):
+                        left_in_set = l_size == 1 or l_span in span_sets[batch_idx]
+                        right_in_set = r_size == 1 or r_span in span_sets[batch_idx]
+                        if left_in_set and right_in_set:
+                            to_choose[batch_idx] = idx
+                            assert to_choose_assert[batch_idx] is False, "Only one valid tree."
+                            to_choose_assert[batch_idx] = True
+
+
+                lps, rps, sps = torch.cat(lps, 1), torch.cat(rps, 1), torch.cat(sps, 1)
+
+                ps = lps + rps + sps
+                argmax = ps.argmax(1).long()
+                valmax = ps[range(batch_size), argmax]
+
+                # Choose the relevant span.
+                # TODO
+
+                chart[level][pos, :] = valmax
+
+        return None
+
     def forward(self, sentences, neg_samples, diora, info):
         batch_size, length = sentences.shape
         size = diora.outside_h.shape[-1]
 
         # Get the score for the ground truth tree.
-        # TODO
+        gold_scores = self.get_score_for_spans(diora.saved_scalars, info['spans'])
 
         # Get the score for maximal tree.
         # TODO
@@ -376,7 +463,10 @@ class Trainer(object):
         return result
 
     def prepare_info(self, batch_map):
-        return {}
+        info = {}
+        if 'spans' in batch_map:
+            info['spans'] = batch_map['spans']
+        return info
 
     def step(self, *args, **kwargs):
         try:

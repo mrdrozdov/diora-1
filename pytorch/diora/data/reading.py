@@ -149,6 +149,22 @@ class PlainTextReader(BaseTextReader):
         yield s
 
 
+def tree_to_spans(tr):
+    spans = []
+
+    def helper(tr, pos=0):
+        if not isinstance(tr, (list, tuple)):
+            return 1
+        size = 0
+        for x in tr:
+            xsize = helper(x, pos + size)
+            size += xsize
+        spans.append((pos, size))
+        return size
+    helper(tr)
+    return spans
+
+
 class NLIReader(object):
 
     LABEL_MAP = {
@@ -183,7 +199,13 @@ class NLIReader(object):
         s2, t2 = convert_binary_bracketing(example['sentence2_binary_parse'], lowercase=self.lowercase)
         example_id = example['pairID']
 
-        return dict(s1=s1, label=label, s2=s2, t1=t1, t2=t2, example_id=example_id)
+        tree_1 = build_tree(s1, t1)
+        tree_2 = build_tree(s2, t2)
+
+        spans_1 = tree_to_spans(tree_1)
+        spans_2 = tree_to_spans(tree_2)
+
+        return dict(s1=s1, label=label, s2=s2, t1=t1, t2=t2, example_id=example_id, spans_1=spans_1, spans_2=spans_2)
 
     def read_label(self, label):
         return self.LABEL_MAP[label]
@@ -209,9 +231,11 @@ class NLISentenceReader(NLIReader):
                 if not skip_s1:
                     example_ids.append(example_id + '_1')
                     sentences.append(s1)
+                    extra.setdefault('spans', []).append(smap['spans_1'])
                 if not skip_s2:
                     example_ids.append(example_id + '_2')
                     sentences.append(s2)
+                    extra.setdefault('spans', []).append(smap['spans_2'])
 
         extra['example_ids'] = example_ids
 
