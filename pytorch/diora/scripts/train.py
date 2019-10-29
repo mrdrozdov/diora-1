@@ -356,7 +356,7 @@ def argument_parser():
                              'Otherwise, learn outside root as bias.')
 
     # Model (Objective).
-    parser.add_argument('--reconstruct_mode', default='margin', choices=('margin', 'softmax'))
+    parser.add_argument('--reconstruct_mode', default='margin', choices=('margin', 'softmax', 'semi'))
 
     # Model (Embeddings).
     parser.add_argument('--emb', default='w2v', choices=('w2v', 'elmo', 'both'))

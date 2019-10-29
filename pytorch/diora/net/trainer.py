@@ -133,6 +133,34 @@ class ReconstructionSoftmaxLoss(nn.Module):
         return loss, ret
 
 
+class SemiSupervisedParsingLoss(nn.Module):
+    name = 'semi_supervised_parsing_loss'
+
+    def __init__(self, margin=1, cuda=False):
+        super(SemiSupervisedParsingLoss, self).__init__()
+        self.margin = margin
+        self._cuda = cuda
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        params = [p for p in self.parameters() if p.requires_grad]
+        for i, param in enumerate(params):
+            param.data.normal_()
+
+    def loss_hook(self, sentences, neg_samples, inputs):
+        pass
+
+    def forward(self, sentences, neg_samples, diora, info):
+        batch_size, length = sentences.shape
+        size = diora.outside_h.shape[-1]
+
+        loss = diora.outside_h.norm()
+
+        ret = dict(semi_supervised_parsing_loss=loss)
+
+        return loss, ret
+
+
 def get_loss_funcs(options, batch_iterator=None, embedding_layer=None):
     input_dim = embedding_layer.weight.shape[1]
     size = options.hidden_dim
@@ -149,6 +177,8 @@ def get_loss_funcs(options, batch_iterator=None, embedding_layer=None):
     elif options.reconstruct_mode == 'softmax':
         reconstruction_loss_fn = ReconstructionSoftmaxLoss(embedding_layer,
             margin=margin, k_neg=k_neg, input_size=input_dim, size=size, cuda=cuda)
+    elif options.reconstruct_mode == 'semi':
+        reconstruction_loss_fn = SemiSupervisedParsingLoss(margin=margin, cuda=cuda)
     loss_funcs.append(reconstruction_loss_fn)
 
     return loss_funcs
