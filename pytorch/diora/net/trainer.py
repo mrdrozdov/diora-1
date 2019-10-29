@@ -13,6 +13,10 @@ from diora.net.diora import DioraMLPShared
 
 from diora.logging.configuration import get_logger
 
+from diora.analysis.cky import ParsePredictor as CKY
+
+from diora.data.reading import tree_to_spans
+
 
 class ReconstructionLoss(nn.Module):
     name = 'reconstruct_loss'
@@ -136,10 +140,11 @@ class ReconstructionSoftmaxLoss(nn.Module):
 class SemiSupervisedParsingLoss(nn.Module):
     name = 'semi_supervised_parsing_loss'
 
-    def __init__(self, margin=1, cuda=False):
+    def __init__(self, margin=1, cuda=False, word2idx=None):
         super(SemiSupervisedParsingLoss, self).__init__()
         self.margin = margin
         self._cuda = cuda
+        self.word2idx = word2idx
         self.reset_parameters()
 
     def reset_parameters(self):
@@ -240,13 +245,20 @@ class SemiSupervisedParsingLoss(nn.Module):
         batch_size, length = sentences.shape
         size = diora.outside_h.shape[-1]
 
+        # TODO for semi-supervised create a "pseudo-tree" using external annotation (i.e. entity boundaries).
+
         # Get the score for the ground truth tree.
         gold_scores = self.get_score_for_spans(sentences, diora.saved_scalars, info['spans'])
 
         # Get the score for maximal tree.
-        # TODO
+        parse_predictor = CKY(net=diora, word2idx=self.word2idx)
+        max_trees = parse_predictor.parse_batch({'sentences': sentences})
+        max_spans = [tree_to_spans(x) for x in max_trees]
+        max_scores = self.get_score_for_spans(sentences, diora.saved_scalars, max_spans)
 
-        loss = diora.outside_h.norm()
+        loss = max_scores - gold_scores + self.margin
+
+        loss = loss.sum().view(1) / batch_size
 
         ret = dict(semi_supervised_parsing_loss=loss)
 
@@ -270,7 +282,7 @@ def get_loss_funcs(options, batch_iterator=None, embedding_layer=None):
         reconstruction_loss_fn = ReconstructionSoftmaxLoss(embedding_layer,
             margin=margin, k_neg=k_neg, input_size=input_dim, size=size, cuda=cuda)
     elif options.reconstruct_mode == 'semi':
-        reconstruction_loss_fn = SemiSupervisedParsingLoss(margin=margin, cuda=cuda)
+        reconstruction_loss_fn = SemiSupervisedParsingLoss(margin=margin, cuda=cuda, word2idx=batch_iterator.word2idx)
     loss_funcs.append(reconstruction_loss_fn)
 
     return loss_funcs
